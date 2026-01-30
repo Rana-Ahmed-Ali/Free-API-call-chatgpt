@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+playwright
+playwright-stealth
+requests
+streamlit
+httpx
+pyngrok
+rich
