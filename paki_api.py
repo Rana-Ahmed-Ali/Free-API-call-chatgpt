@@ -207,13 +207,17 @@ async def chat_stream(prompt: str):
             await dismiss_popup(page)
 
             # Use JS-injected input (FASTER & SAFER)
-            # This fixes the "Timeout 30000ms exceeded" error on large inputs
-            # because we don't wait for 'typing' animation.
-            await page.evaluate(f"""
-                const el = document.querySelector('{PROMPT_SELECTOR}');
-                el.innerText = `{prompt.replace('`', '\\`').replace('${', '\\${')}`;
-                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            """)
+            # We explicitly pass arguments to avoid Python string interpolation issues
+            await page.evaluate("""
+                ([selector, text]) => {
+                    const el = document.querySelector(selector);
+                    if (el) {
+                        el.innerText = text;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                }
+            """, [PROMPT_SELECTOR, prompt])
+            
             await asyncio.sleep(0.5)
             await page.press(PROMPT_SELECTOR, "Enter")
 
