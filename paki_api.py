@@ -102,7 +102,8 @@ async def ask(prompt: str):
         await page.wait_for_selector(stop_selector, timeout=10000)
         
         # Wait for the AI to finish (stop button disappears)
-        await page.wait_for_selector(stop_selector, state="hidden", timeout=120000)
+        # Timeout=0 means "wait forever/until done"
+        await page.wait_for_selector(stop_selector, state="hidden", timeout=0)
         
         # Tiny wait to ensure DOM update (Reduced from 0.8s to 0.1s)
         await asyncio.sleep(0.1)
@@ -139,17 +140,19 @@ async def chat_stream(prompt: str):
             await page.press("#prompt-textarea", "Enter")
 
             # 3. Wait for generation to start (Stop button appears)
+            # We give it 30s to start generating, which is plenty
             stop_selector = 'button[data-testid="stop-button"]'
             try:
-                await page.wait_for_selector(stop_selector, timeout=10000)
+                await page.wait_for_selector(stop_selector, timeout=30000)
             except:
                 yield "Error: Generation failed to start."
                 return
 
-            # 4. Stream the response loop
+            # 4. Stream the response loop    
             last_text = ""
             while True:
                 # Check if generating
+                # We do NOT use a timeout here because we just want to peek at the state
                 is_generating = await page.locator(stop_selector).is_visible()
                 
                 # Get the latest text
