@@ -130,6 +130,25 @@ async def get_last_assistant_message(page: Page) -> str | None:
     return (await messages[-1].inner_text()).strip()
 
 
+async def safe_fill_input(page: Page, prompt: str) -> None:
+    """
+    Safely fills the ChatGPT input box using evaluated JavaScript.
+    This works much better for large multi-line prompts than page.fill().
+    """
+    # 1. Focus the element
+    await page.focus(PROMPT_SELECTOR)
+    
+    # 2. Use JS to set the text content directly (bypass slow typing)
+    # We must trigger an 'input' event so React/ChatGPT knows the text changed
+    await page.evaluate(f"""
+        const el = document.querySelector('{PROMPT_SELECTOR}');
+        el.innerText = `{{}}`;
+        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+    """.format(prompt.replace('`', '\\`').replace('${', '\\${')))
+    
+    # 3. Small wait to let the UI react
+    await asyncio.sleep(0.5)
+
 # ============================================================
 # /ask endpoint (non-streaming)
 # ============================================================
@@ -142,9 +161,8 @@ async def ask(prompt: str):
     try:
         await dismiss_popup(page)
 
-        # Clear + send prompt
-        await page.fill(PROMPT_SELECTOR, "")
-        await page.fill(PROMPT_SELECTOR, prompt)
+        # Send prompt securely
+        await safe_fill_input(page, prompt)
         await page.press(PROMPT_SELECTOR, "Enter")
 
         # Wait for generation to start
@@ -184,12 +202,19 @@ async def chat_stream(prompt: str):
             media_type="text/plain",
         )
 
-    async def response_generator() -> AsyncGenerator[str, None]:
+    async def response_generator():
         try:
             await dismiss_popup(page)
 
-            await page.fill(PROMPT_SELECTOR, "")
-            await page.fill(PROMPT_SELECTOR, prompt)
+            # Use JS-injected input (FASTER & SAFER)
+            # This fixes the "Timeout 30000ms exceeded" error on large inputs
+            # because we don't wait for 'typing' animation.
+            await page.evaluate(f"""
+                const el = document.querySelector('{PROMPT_SELECTOR}');
+                el.innerText = `{prompt.replace('`', '\\`').replace('${', '\\${')}`;
+                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            """)
+            await asyncio.sleep(0.5)
             await page.press(PROMPT_SELECTOR, "Enter")
 
             # Wait for generation to start
